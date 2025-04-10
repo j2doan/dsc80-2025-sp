@@ -158,6 +158,12 @@ def with_leftover(A):
     leftovers = 20 % A
     cumulative_leftovers = np.cumsum(leftovers)
     can_buy = cumulative_leftovers >= A
+
+    if np.any(can_buy):
+        output = np.argmax(can_buy)
+        return int(output)
+    else:
+        return -1
     return len(A) - np.sum(can_buy)
 
 
@@ -174,7 +180,7 @@ def salary_stats(salary):
     avg_loss = salary.groupby('Team')['Salary'].mean().loc['Los Angeles Lakers'] # avg loss LA Lakers
     fifth_lowest_salary = salary.sort_values(by='Salary')[['Player', 'Team']].iloc[4]
     fifth_lowest = fifth_lowest_salary.loc['Player'] + ', ' + fifth_lowest_salary.loc['Team']
-    stripped_suffix = salary['Player'].str.replace(' Jr.', '').str.replace(' III', '') 
+    stripped_suffix = salary['Player'].str.replace(' Jr.', '').str.replace(' Sr.', '').str.replace(' IV', '').str.replace(' III', '').str.replace(' II', '')       
     duplicates = stripped_suffix.str.split(' ').apply(lambda x: x[1]).nunique() != stripped_suffix.nunique()
     team_of_highest_paid = salary.sort_values(by='Salary', ascending=False)['Team'].iloc[0]
     total_highest = salary.groupby('Team')['Salary'].sum().loc[team_of_highest_paid]
