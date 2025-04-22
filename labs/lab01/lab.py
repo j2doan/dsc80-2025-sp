@@ -88,13 +88,23 @@ def exploded_numbers(ints, n):
 
 
 def last_chars(fh):
-    output = ""
-    for line in fh:
-        for j in range(-1, (len(line) * -1) -1, -1):
-            if line[j] != '\n':
-                break
-        output = output + line[j]
-    return output
+    s = fh.read()
+    if len(s) == 0:
+        return ""
+    s = s.split("\n")
+    last = []
+    for line in s:
+        if line != "":
+            last.append(line[-1])
+    return "".join(last)
+    
+    #output = ""
+    #for line in fh:
+    #    for j in range(-1, (len(line) * -1) -1, -1):
+    #        if line[j] != '\n':
+    #            break
+    #    output = output + line[j]
+    #return output
     
 
 

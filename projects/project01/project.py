@@ -115,11 +115,62 @@ def visualize_bus_network(bus_df):
 
 
 def find_neighbors(station_name, detailed_schedule):
-    ...
+    station_data = detailed_schedule[detailed_schedule['stop_name'] == station_name]
+
+    if len(station_data) == 0:
+        return np.array([])
+
+
+    station_data['stop_sequence'] = station_data['stop_sequence'] + 1
+
+    merged_data = pd.merge(
+        detailed_schedule.reset_index(),  # Reset index so we can merge on columns
+        station_data.reset_index(),  # Reset index so we can merge on trip_id
+        how='inner',  # Only keep rows that match in both DataFrames
+        left_on=['trip_id', 'stop_sequence'],  # Merge on trip_id and stop_sequence
+        right_on=['trip_id', 'stop_sequence']  # Merge on trip_id and stop_sequence (since 'index' is no longer present)
+    )
+
+    merged_data
+
+    output = merged_data['stop_name_x'].unique().tolist()
+    return np.array(output)
 
 
 def bfs(start_station, end_station, detailed_schedule):
-    ...
+    
+    if start_station not in detailed_schedule['stop_name'].values:
+        return f"Start station {start_station} not found."
+    if end_station not in detailed_schedule['stop_name'].values:
+        return f"End station '{end_station}' not found."
+
+    visited = set()
+    queue = deque([[start_station]])
+
+    while queue:
+        path = queue.popleft()
+        current_stop = path[-1]
+
+        if current_stop == end_station:
+            result_rows = []
+            for i, stop_name in enumerate(path):
+                row = detailed_schedule[detailed_schedule['stop_name'] == stop_name].iloc[0]
+                result_rows.append({
+                    'stop_name': stop_name,
+                    'stop_lat': row['stop_lat'],
+                    'stop_lon': row['stop_lon'],
+                    'stop_num': i + 1
+                })
+            return pd.DataFrame(result_rows)
+
+        if current_stop not in visited:
+            visited.add(current_stop)
+            neighbors = find_neighbors(current_stop, detailed_schedule)
+            for neighbor in neighbors:
+                if neighbor not in visited:
+                    queue.append(path + [neighbor])
+
+    return "No path found."
 
 
 # ---------------------------------------------------------------------
@@ -131,17 +182,156 @@ def simulate_bus_arrivals(tau, seed=12):
     
     np.random.seed(seed) # Random seed -- do not change
     
-    ...
+    start_time = 360
+    end_time = 1440
+
+    num_buses = int((end_time - start_time) / tau) # AVG NUM BUSSES
+
+    arrival_minutes = np.random.uniform(start_time, end_time, num_buses)
+    # here, instead taking n number of uniform distributions and adding the time,
+    # just take 1 uniform distribution for all busses, it will evenly distribute out
+    arrival_minutes.sort()
+
+    bus_times = {
+        'Arrival Time': [],
+        'Interval': []
+    }
+
+    for i in range(len(arrival_minutes)):
+
+        if i == 0:
+            interval = arrival_minutes[i] - start_time
+        else:
+            interval = arrival_minutes[i] - arrival_minutes[i - 1]
+
+        total_sec = int(arrival_minutes[i] * 60)
+        hours = total_sec // 3600
+        minutes = (total_sec % 3600) // 60
+        seconds = total_sec % 60
+
+        arrival = f"{str(hours).zfill(2)}:{str(minutes).zfill(2)}:{str(seconds).zfill(2)}"
+        bus_times['Arrival Time'].append(arrival)
+        bus_times['Interval'].append(round(interval, 2))
+
+    return pd.DataFrame(bus_times)
 
 
 # ---------------------------------------------------------------------
 # QUESTION 4
 # ---------------------------------------------------------------------
 
+# HELPER FUNCTIONS
+def time_str_to_minutes(t):
+    """
+    >>> time_str_to_minutes('06:00:00')
+    360
+    """
+    h, m, s = map(int, t.split(":"))
+    return h * 60 + m + s / 60
+
+def minutes_to_time_str(mins):
+    """
+    >>> minutes_to_time_str(360)
+    '06:00:00'
+    """
+    total_seconds = int(mins * 60)
+    h = total_seconds // 3600
+    m = (total_seconds % 3600) // 60
+    s = total_seconds % 60
+    return f"{str(h).zfill(2)}:{str(m).zfill(2)}:{str(s).zfill(2)}"
+
 
 def simulate_wait_times(arrival_times_df, n_passengers):
+    
+    # Convert EVERYTHING BACK TO RAW MINUTES for data use
 
-    ...
+    bus_minutes = arrival_times_df["Arrival Time"].apply(time_str_to_minutes).values
+
+    start_time = 360
+    end_time = max(bus_minutes)
+
+    # NOW WE BEGIN. JUST LIKE PART 3
+    passenger_arrival_minutes = np.random.uniform(start_time, end_time, n_passengers) # same idea as bus uniform dist
+    passenger_arrival_minutes.sort()
+
+    passenger_data = {
+        "Passenger Arrival Time": [],
+        "Bus Arrival Time": [],
+        "Bus Index": [],
+        "Wait Time": []
+    }
+
+    bus_idx = 0
+
+    for when_passenger_comes in passenger_arrival_minutes:
+        # Only increase / go to the next bus once the current passenger is over the departure time of the current bus.
+        while bus_idx < len(bus_minutes) and bus_minutes[bus_idx] < when_passenger_comes:
+            bus_idx += 1
+        
+        # End of buses
+        if bus_idx >= len(bus_minutes):
+            break
+
+        wait_time = bus_minutes[bus_idx] - when_passenger_comes
+
+        passenger_data["Passenger Arrival Time"].append(minutes_to_time_str(when_passenger_comes))
+        passenger_data["Bus Arrival Time"].append(minutes_to_time_str(bus_minutes[bus_idx]))
+        passenger_data["Bus Index"].append(bus_idx)
+        passenger_data["Wait Time"].append(round(wait_time, 2))
+
+    return pd.DataFrame(passenger_data)
 
 def visualize_wait_times(wait_times_df, timestamp):
-    ...
+    h = timestamp.hour
+    m = timestamp.minute
+    s = timestamp.second
+
+    begin = h * 60 + m + s / 60
+    end = begin + 60
+
+    edited_wait_times_df = wait_times_df.copy()
+    edited_wait_times_df['Passenger Arrival Time Min'] = edited_wait_times_df['Passenger Arrival Time'].apply(time_str_to_minutes)
+    edited_wait_times_df['Bus Arrival Time Min'] = edited_wait_times_df['Bus Arrival Time'].apply(time_str_to_minutes)
+    edited_wait_times_df = edited_wait_times_df[(edited_wait_times_df['Passenger Arrival Time Min'] >= begin) & (edited_wait_times_df['Bus Arrival Time Min'] >= begin)]
+    edited_wait_times_df = edited_wait_times_df[(edited_wait_times_df['Passenger Arrival Time Min'] <= end) & (edited_wait_times_df['Bus Arrival Time Min'] <= end)]
+    edited_wait_times_df
+
+    bus_times = edited_wait_times_df['Bus Arrival Time Min']
+    passenger_times_x = edited_wait_times_df['Passenger Arrival Time Min']
+    waits_y = edited_wait_times_df['Wait Time']
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=bus_times,
+        y=[0] * len(bus_times),
+        mode='markers',
+        marker=dict(color='blue', size=8),
+        name='Bus Arrivals'
+    ))
+
+    for x, y in zip(passenger_times_x, waits_y):
+        fig.add_trace(go.Scatter(
+            x=[x, x],
+            y=[0, y],
+            mode='lines',
+            line=dict(color='red', width=2, dash='dot'),
+            showlegend=False
+        ))
+
+        fig.add_trace(go.Scatter(
+            x=[x],
+            y=[y],
+            mode='markers',
+            marker=dict(color='red', size=5),
+            showlegend=False
+        ))
+
+    fig.update_layout(
+        title='Passenger Wait Times in a 60-Minute Block',
+        xaxis_title='Time (minutes in a block)',
+        yaxis_title='Wait Time (minutes)',
+        height=500
+    )  
+
+    return fig
