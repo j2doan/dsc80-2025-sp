@@ -35,7 +35,15 @@ warnings.filterwarnings("ignore")
 
 
 def clean_loans(loans):
-    ...
+    new_loans = loans.copy()
+    new_loans['issue_d'] = new_loans['issue_d'].apply(lambda x: pd.Timestamp(x))
+
+    new_loans['term'] = new_loans['term'].str.replace(' months', '').astype(int)
+
+    new_loans['emp_title'] = new_loans['emp_title'].str.lower().str.strip().apply(lambda x: 'registered nurse' if x == 'rn' else x)
+
+    new_loans['term_end'] = new_loans.apply(lambda row: row['issue_d'] + pd.DateOffset(months=row['term']), axis=1)
+    return new_loans
 
 
 # ---------------------------------------------------------------------
@@ -45,7 +53,13 @@ def clean_loans(loans):
 
 
 def correlations(df, pairs):
-    ...
+    output = {}
+    for col1, col2 in pairs:
+        title = '_'.join(['r', col1, col2])
+        r = df[col1].corr(df[col2])
+        output[title] = r
+
+    return pd.Series(output)
 
 
 
@@ -55,7 +69,45 @@ def correlations(df, pairs):
 
 
 def create_boxplot(loans):
-    ...
+    
+    def set_fico_bounds(fico):
+        if fico >= 580 and fico < 670:
+            return '[580, 670)'
+        elif fico >= 670 and fico < 740:
+            return '[670, 740)'
+        elif fico >= 740 and fico < 800:
+            return '[740, 800)'
+        elif fico >= 800 and fico < 850:
+            return '[800, 850)'
+        else:
+            return np.nan
+    
+    loans_copy = loans.copy()
+
+    loans_copy['Credit Score Range'] = loans_copy['fico_range_low'].apply(set_fico_bounds)
+
+    loans_copy = loans_copy.dropna(subset=['Credit Score Range'])
+
+    credit_score_order = ['[580, 670)', '[670, 740)', '[740, 800)', '[800, 850)']
+    term_order = [36, 60]
+
+    fig = px.box(
+        loans_copy, 
+        x='Credit Score Range', 
+        y='int_rate', 
+        color='term', 
+        color_discrete_map={36: 'purple', 60: 'gold'},
+        title="Interest Rate vs. Credit Score",
+        labels={'Credit Score Range': 'Credit Score Range', 'int_rate': 'Interest Rate (%)', 'term': 'Loan Length (Months)'},
+        category_orders={
+            'Credit Score Range': credit_score_order,
+            'term': term_order
+        }
+    )
+
+    fig.update_traces(quartilemethod="exclusive")  # Using exclusive quartile method
+
+    return fig
 
 
 # ---------------------------------------------------------------------
@@ -64,17 +116,41 @@ def create_boxplot(loans):
 
 
 def ps_test(loans, N):
-    ...
+    with_statement = loans[loans['desc'].notna() == True]['int_rate']
+    without_statement = loans[loans['desc'].notna() == False]['int_rate']
+
+    obsv_stat = with_statement.mean() - without_statement.mean()
+
+    all_int_rates = np.concatenate([with_statement, without_statement])
+
+    perm_diffs = []
+
+    for _ in range(N):
+        np.random.shuffle(all_int_rates)
+
+        perm_with = all_int_rates[:len(with_statement)]
+        perm_without = all_int_rates[len(with_statement):]
+
+        perm_stat = perm_with.mean() - perm_without.mean()
+
+        perm_diffs.append(perm_stat)
+
+    p_val = np.mean(np.array(perm_diffs) >= obsv_stat)
+
+    return p_val
     
 def missingness_mechanism():
-    ...
+    return 2
     
 def argument_for_nmar():
     '''
     Put your justification here in this multi-line string.
     Make sure to return your string!
     '''
-
+    return 'If we just consider the desc column by itself, we can argue ' \
+    'NMAR based on a reasoning where people with lower credit scores would' \
+    'more likely give a personal statement to boost their chances of getting' \
+    'a loan, making the missing values dependent on the values themselves.'
 
 # ---------------------------------------------------------------------
 # QUESTION 5
@@ -82,7 +158,27 @@ def argument_for_nmar():
 
 
 def tax_owed(income, brackets):
-    ...
+    total = 0
+    curr_multiplier = 0
+    prev_threshold = 0
+    for i, (multiplier, threshold) in enumerate(brackets):
+        if i == 0:
+            if income > threshold:
+                curr_multiplier = multiplier
+                prev_threshold = threshold
+                continue
+        else:
+            if income > (threshold - prev_threshold):
+                total += curr_multiplier * (threshold - prev_threshold)
+                income -= (threshold - prev_threshold)
+                prev_threshold = threshold
+                curr_multiplier = multiplier
+            else:
+                break
+
+    total += curr_multiplier * income
+
+    return total
 
 
 # ---------------------------------------------------------------------

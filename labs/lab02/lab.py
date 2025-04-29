@@ -81,6 +81,26 @@ def population_stats(df):
 def most_common(df, N=10):
     new_df = pd.DataFrame()
     for col in df.columns:
+        count_col_index = (list(df.columns).index(col) + 1) % len(df.columns)
+        count_col = df.columns[count_col_index]
+
+        new_sorted = df.groupby(col)[count_col].count().reset_index(name='count')
+
+        new_sorted = new_sorted.sort_values(by='count', ascending=False).reset_index(drop=True)
+
+        new_sorted = new_sorted.rename(columns={
+            col: f'{col}_values',
+            'count': f'{col}_counts'
+        }).iloc[:N]
+
+        if new_df.empty:
+            new_df = new_sorted
+        else:
+            new_df = pd.concat([new_df, new_sorted], axis=1)
+
+    return new_df
+    """
+    for col in df.columns:
         x = df.groupby(col).count()
         sort = x.sort_values(by=x.columns[0], ascending=False)
         val = sort.index[:N]
@@ -88,7 +108,7 @@ def most_common(df, N=10):
         new_df[f"{col}_values"] = val
         new_df[f"{col}_counts"] = count
     return new_df
-
+    """
 
 # ---------------------------------------------------------------------
 # QUESTION 4
