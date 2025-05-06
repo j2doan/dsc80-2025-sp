@@ -27,7 +27,35 @@ warnings.filterwarnings("ignore")
 
 
 def create_detailed_schedule(schedule, stops, trips, bus_lines):
+    
+    # merge schedule and stops
+    schedule_stops = pd.merge(schedule, stops, on='stop_id')
 
+    # merge schedule+stops and trips 
+    schedule_stops_trips = pd.merge(schedule_stops, trips, on='trip_id')
+
+    # get series of stop nums for each trip id
+    stop_num = schedule_stops_trips.groupby('trip_id')['stop_sequence'].count().rename('num')
+
+    # combine that series back
+    schedule_stops_trips = schedule_stops_trips.merge(stop_num, on='trip_id')
+
+    # filter out unecessary bus lines
+    schedule_stops_trips = schedule_stops_trips[schedule_stops_trips['route_id'].isin(bus_lines)]
+
+    # convert route_id col to Categorical data type
+    schedule_stops_trips['route_id'] = pd.Categorical(schedule_stops_trips['route_id'], categories=bus_lines, ordered=True)
+
+    # sort the values accordingly by column priorities
+    schedule_stops_trips = schedule_stops_trips.sort_values(by=['route_id', 'num', 'trip_id', 'stop_sequence'])
+
+    # dorp the temp column from stop_num
+    schedule_stops_trips = schedule_stops_trips.drop(columns=['num'])
+
+    # set the index
+    return schedule_stops_trips.set_index('trip_id')
+    
+    """
     schedule_stops = schedule.merge(stops, on='stop_id', how='left')
     detailed_schedule = schedule_stops.merge(trips, on='trip_id', how='left')
 
@@ -48,6 +76,7 @@ def create_detailed_schedule(schedule, stops, trips, bus_lines):
     detailed_schedule = detailed_schedule[detailed_schedule['route_id'].isna() == False]
     
     return detailed_schedule
+    """
 
 
 def visualize_bus_network(bus_df):
@@ -84,6 +113,23 @@ def visualize_bus_network(bus_df):
         margin={"r":0,"t":0,"l":0,"b":0}
     )
 
+    unique_routes = bus_df['route_id'].unique()
+    color_palette = px.colors.qualitative.Plotly
+    color_of_routes = {route:color_palette[i%len(color_palette)] for i, route in enumerate(unique_routes)}
+
+    for i in unique_routes:
+        trip_df = bus_df[bus_df['route_id'] == i]
+        fig.add_trace(go.Scattermapbox(
+            lat=trip_df['stop_lat'], # a series of stop_lat
+            lon=trip_df['stop_lon'], # series of stop_lon
+            mode='markers',
+            marker=dict(color=color_of_routes[i]),
+            text=trip_df['stop_name'],
+            name=f"Bus Line: {i}" # EX: Route 201 (17287595)
+        ))
+
+    return fig
+    """
     color_palette = px.colors.qualitative.Plotly # get the colors
     route_ids = bus_df['route_id'].unique() # get all the unique route_ids
     color_map = {route_id: color_palette[i % len(color_palette)] for i, route_id in enumerate(route_ids)} # create a dictionary for each route_id:color
@@ -105,6 +151,7 @@ def visualize_bus_network(bus_df):
         ))
 
     return fig
+    """
 
 
 

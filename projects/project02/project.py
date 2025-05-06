@@ -187,7 +187,13 @@ def tax_owed(income, brackets):
 
 
 def clean_state_taxes(state_taxes_raw): 
-    ...
+    df= state_taxes_raw.copy()
+    df = df[~df.isna().all(axis=1)]
+    df['State'] = df['State'].apply(lambda x: np.nan if isinstance(x, str) and '(' in x else x)
+    df['State'] = df['State'].fillna(method='ffill')
+    df['Rate'] = df['Rate'].str.replace('%', '').replace('none', '0').astype(float).apply(lambda y: round(y / 100, 2))
+    df['Lower Limit'] = df['Lower Limit'].fillna('0').str.replace(r'[$,]', '', regex=True).astype(int)
+    return df
 
 
 # ---------------------------------------------------------------------
@@ -196,7 +202,7 @@ def clean_state_taxes(state_taxes_raw):
 
 
 def state_brackets(state_taxes):
-    ...
+    return state_taxes.groupby('State').apply(lambda x: list(zip(x['Rate'], x['Lower Limit']))).reset_index(name='bracket_list').set_index('State')
     
 def combine_loans_and_state_taxes(loans, state_taxes):
     # Start by loading in the JSON file.
@@ -207,7 +213,12 @@ def combine_loans_and_state_taxes(loans, state_taxes):
         state_mapping = json.load(f)
         
     # Now it's your turn:
-    ...
+    state_taxes_reset = state_brackets(state_taxes)
+
+    state_taxes_reset = state_taxes_reset.reset_index()
+    state_taxes_reset['State'] = state_taxes_reset['State'].apply(lambda y: state_mapping[y])
+    
+    return loans.merge(state_taxes_reset, left_on='addr_state', right_on='State', how='left').drop(columns=['addr_state'])
 
 
 # ---------------------------------------------------------------------
@@ -225,7 +236,13 @@ def find_disposable_income(loans_with_state_taxes):
      (0.35, 231251),
      (0.37, 578125)
     ]
-    ...
+    loans_with_state_taxes['federal_tax_owed'] = loans_with_state_taxes['annual_inc'].apply(lambda y: tax_owed(y, FEDERAL_BRACKETS))
+
+    loans_with_state_taxes['state_tax_owed'] = loans_with_state_taxes.apply(lambda row: tax_owed(row['annual_inc'], row['bracket_list']), axis=1)
+
+    loans_with_state_taxes['disposable_income'] = loans_with_state_taxes['annual_inc'] - loans_with_state_taxes['federal_tax_owed'] - loans_with_state_taxes['state_tax_owed']
+
+    return loans_with_state_taxes
 
 
 # ---------------------------------------------------------------------
@@ -234,7 +251,34 @@ def find_disposable_income(loans_with_state_taxes):
 
 
 def aggregate_and_combine(loans, keywords, quantitative_column, categorical_column):
-    ...
+
+    result_data = []
+
+    for key in keywords:
+        query_loans = loans[loans['emp_title'].str.contains(key)]
+        result = query_loans.groupby(categorical_column)[quantitative_column].mean()
+        overall = query_loans[quantitative_column].mean()
+        result_data.append(result.to_dict())
+        result_data[-1]['Overall'] = overall
+
+
+
+    final_result_df = pd.DataFrame(result_data, index=keywords)
+
+    final_result_df_reset = final_result_df.T.reset_index().rename(columns={'index': categorical_column})
+    
+    # make sur overall is last
+    overall_row = final_result_df_reset[final_result_df_reset[categorical_column] == 'Overall']
+    df = final_result_df_reset[final_result_df_reset[categorical_column] != 'Overall']
+    df = pd.concat([df, overall_row])
+    
+    df = df.set_index(categorical_column)
+
+    df.columns = [f'{keywords[0]}_mean_{quantitative_column}', f'{keywords[1]}_mean_{quantitative_column}']
+
+    # final_result_df_reset = final_result_df_reset.dropna()
+
+    return df
 
 
 # ---------------------------------------------------------------------
@@ -243,12 +287,15 @@ def aggregate_and_combine(loans, keywords, quantitative_column, categorical_colu
 
 
 def exists_paradox(loans, keywords, quantitative_column, categorical_column):
-    ...
+    result_df = aggregate_and_combine(loans, keywords, quantitative_column, categorical_column)
+    
+    return bool((result_df.iloc[:-1][f'{keywords[0]}_mean_{quantitative_column}'] > result_df.iloc[:-1][f'{keywords[1]}_mean_{quantitative_column}']).all() and \
+        result_df.iloc[-1][f'{keywords[0]}_mean_{quantitative_column}'] < result_df.iloc[-1][f'{keywords[1]}_mean_{quantitative_column}'])
     
 def paradox_example(loans):
     return {
         'loans': loans,
-        'keywords': [..., ...],
-        'quantitative_column': ...,
-        'categorical_column': ...
+        'keywords': ['driver', 'manager'],
+        'quantitative_column': 'int_rate',
+        'categorical_column': 'term'
     }
