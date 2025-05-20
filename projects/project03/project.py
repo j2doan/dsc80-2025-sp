@@ -153,14 +153,119 @@ class NGramLM(object):
             self.prev_mdl = NGramLM(N-1, tokens)
 
     def create_ngrams(self, tokens):
-        ...
+        lst = []
+
+        for i in range(len(tokens) - self.N + 1):
+            chunk = tuple(tokens[i:i + self.N])
+            lst.append(chunk)
+        
+        return lst
         
     def train(self, ngrams):
-        ...
+        
+        df = pd.DataFrame({'ngram':ngrams})
+        df['count_x'] = df.groupby('ngram')['ngram'].transform('count')
+        df['n1gram'] = df['ngram'].apply(lambda x: x[:-1])
+        df['count_y'] = df.groupby('n1gram')['n1gram'].transform('count')
+
+        df['prob'] = df['count_x'] / df['count_y']
+
+        df = df[['ngram', 'n1gram', 'prob']].sort_values(by='prob').set_index('ngram').reset_index()
+
+        df = df.drop_duplicates()
+
+        return df
     
     def probability(self, words):
-        ...
-    
+        words = tokenize(' '.join(words))
+
+        words = words[1:-1]
+
+        result = []
+
+        for k in range(1, self.N):
+            full_ngram = tuple(words[:k])
+            context = full_ngram[:-1] if k > 1 else None
+            result.append((full_ngram, context))
+
+        for i in range(self.N - 1, len(words)):
+            full_ngram = tuple(words[i - self.N + 1 : i + 1])
+            context = full_ngram[:-1]
+            result.append((full_ngram, context))
+            
+        product = 1
+        
+        for i in result:
+
+            length = len(i[0])
+
+            if length == self.N:
+                df = self.mdl
+            else:
+                df = self.prev_mdl
+                for j in range(self.N - length - 1):
+                    df = df.prev_mdl
+                df = df.mdl
+
+            # checks if 2nd element is None
+            if i[1] == None:
+                p = df.loc[i[0]]
+
+            else:
+                p = df[(df["ngram"] == i[0]) & (df["n1gram"] == i[1])]['prob']
+                if len(p) == 0:
+                    p = 0
+                else:
+                    p = p.iloc[0]
+            
+            product *= p
+
+        return product
+
 
     def sample(self, M):
-        ...
+        result = ['\x02']  # Start of sentence token
+        tokens_generated = 0
+
+        while tokens_generated < M:
+            found = False
+            n = self.N
+            context = tuple(result[-(n - 1):]) if n > 1 else None
+            model = self 
+
+            while n > 1:
+                df = model.mdl
+                options = df[df['n1gram'] == context] if context else df.copy()
+
+                if not options.empty:
+                    next_token = np.random.choice(
+                        options['ngram'].apply(lambda x: x[-1]),
+                        p=options['prob'] / options['prob'].sum()
+                    )
+                    result.append(next_token)
+                    tokens_generated += 1
+                    found = True
+                    break
+                else:
+                    model = model.prev_mdl
+                    n -= 1
+                    context = tuple(result[-(n - 1):]) if n > 1 else None
+
+            if not found:
+                # unigram model as last resort
+                if isinstance(model, UnigramLM) or isinstance(model, UniformLM):
+                    next_token = np.random.choice(
+                        model.mdl.index,
+                        p=model.mdl.values
+                    )
+                    result.append(next_token)
+                    tokens_generated += 1
+                else:
+                    # nothing found even in unigram, then STOP token
+                    result.append('\x03')
+                    tokens_generated += 1
+
+            if result[-1] == '\x03':
+                break
+
+        return ' '.join(result)

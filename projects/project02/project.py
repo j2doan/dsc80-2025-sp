@@ -236,13 +236,20 @@ def find_disposable_income(loans_with_state_taxes):
      (0.35, 231251),
      (0.37, 578125)
     ]
-    loans_with_state_taxes['federal_tax_owed'] = loans_with_state_taxes['annual_inc'].apply(lambda y: tax_owed(y, FEDERAL_BRACKETS))
 
-    loans_with_state_taxes['state_tax_owed'] = loans_with_state_taxes.apply(lambda row: tax_owed(row['annual_inc'], row['bracket_list']), axis=1)
+    df = loans_with_state_taxes.copy()
 
-    loans_with_state_taxes['disposable_income'] = loans_with_state_taxes['annual_inc'] - loans_with_state_taxes['federal_tax_owed'] - loans_with_state_taxes['state_tax_owed']
+    df['federal_tax_owed'] = df.apply(lambda y: tax_owed(y['annual_inc'], FEDERAL_BRACKETS), axis=1)
 
-    return loans_with_state_taxes
+    df['state_tax_owed'] = df.apply(lambda row: tax_owed(row['annual_inc'], row['bracket_list']), axis=1)
+
+    gross = df['annual_inc']
+    federal_income = df['federal_tax_owed']
+    state_income = df['state_tax_owed']
+
+    df['disposable_income'] = gross - federal_income - state_income
+
+    return df
 
 
 # ---------------------------------------------------------------------
@@ -288,9 +295,18 @@ def aggregate_and_combine(loans, keywords, quantitative_column, categorical_colu
 
 def exists_paradox(loans, keywords, quantitative_column, categorical_column):
     result_df = aggregate_and_combine(loans, keywords, quantitative_column, categorical_column)
-    
-    return bool((result_df.iloc[:-1][f'{keywords[0]}_mean_{quantitative_column}'] > result_df.iloc[:-1][f'{keywords[1]}_mean_{quantitative_column}']).all() and \
-        result_df.iloc[-1][f'{keywords[0]}_mean_{quantitative_column}'] < result_df.iloc[-1][f'{keywords[1]}_mean_{quantitative_column}'])
+    result_df.fillna(0, inplace=True)
+
+    if (result_df.iloc[:-1, 0] < result_df.iloc[:-1, 1]).sum() == (result_df.shape[0] - 1):
+        # check last row
+        if result_df.iloc[-1, 0] > result_df.iloc[-1, 1]:
+            return True
+    elif (result_df.iloc[:-1, 0] > result_df.iloc[:-1, 1]).sum() == (result_df.shape[0] - 1):
+        # check last row
+        if result_df.iloc[-1, 0] < result_df.iloc[-1, 1]:
+            return True
+    else:
+        return False
     
 def paradox_example(loans):
     return {
