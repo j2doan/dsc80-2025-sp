@@ -63,6 +63,17 @@ def tokenize(book_string):
 
     return tokens
 
+    """
+    x = re.split(r'\n\n', book_string.strip())
+
+    non_empty = filter(lambda x: x.strip(), x)
+
+    x = [['\x02'] + re.findall(r"\w'+|[^\w\s]", x) + ['\x03'] for x in non_empty if x.strip()]
+
+    return (list(chain.from_iterable(x)))
+
+    """
+
 
 # ---------------------------------------------------------------------
 # QUESTION 3

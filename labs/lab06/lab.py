@@ -26,6 +26,8 @@ def question1():
     # No Python required; create the HTML file.
     return
 
+    
+
 
 # ---------------------------------------------------------------------
 # QUESTION 2
