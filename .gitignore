@@ -174,3 +174,4 @@ cython_debug/
 .pypirc
 
 **/_site/
+projects/project04/2024_LoL_esports_match_data_from_OraclesElixir.csv
