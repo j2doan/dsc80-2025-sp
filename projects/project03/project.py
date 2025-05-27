@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import requests
 import time
+from itertools import chain
 
 
 # ---------------------------------------------------------------------
@@ -43,6 +44,7 @@ def get_book(url):
 
 
 def tokenize(book_string):
+    """
     paragraphs = re.split(r'(?:\n){2,}', book_string.strip())
 
     tokens = ['\x02']
@@ -62,17 +64,18 @@ def tokenize(book_string):
     tokens.pop()
 
     return tokens
-
     """
-    x = re.split(r'\n\n', book_string.strip())
+
+    
+    x = re.split(r'(\n\n)+', book_string)
 
     non_empty = filter(lambda x: x.strip(), x)
 
-    x = [['\x02'] + re.findall(r"\w'+|[^\w\s]", x) + ['\x03'] for x in non_empty if x.strip()]
+    x = [['\x02'] + re.findall(r'\w+|[^\w\s]', x) + ['\x03'] for x in non_empty if x.strip()]
 
     return (list(chain.from_iterable(x)))
 
-    """
+    
 
 
 # ---------------------------------------------------------------------
@@ -280,3 +283,5 @@ class NGramLM(object):
                 break
 
         return ' '.join(result)
+
+# my code ends at the first \x03, it should continue, like add next \x02
