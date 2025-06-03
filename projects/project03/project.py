@@ -44,6 +44,19 @@ def get_book(url):
 
 
 def tokenize(book_string):
+
+    paragraphs = re.split(r'(?:\n\s*){2,}', book_string)
+
+    paragraphs = list(filter(None, map(str.strip, paragraphs)))
+
+    tokenized = map(
+        lambda p: ['\x02'] + re.findall(r'\w+|[^\w\s]', p) + ['\x03'],
+        paragraphs
+    )
+
+    return list(chain.from_iterable(tokenized))
+
+
     """
     paragraphs = re.split(r'(?:\n){2,}', book_string.strip())
 
@@ -65,15 +78,6 @@ def tokenize(book_string):
 
     return tokens
     """
-
-    
-    x = re.split(r'(\n\n)+', book_string)
-
-    non_empty = filter(lambda x: x.strip(), x)
-
-    x = [['\x02'] + re.findall(r'\w+|[^\w\s]', x) + ['\x03'] for x in non_empty if x.strip()]
-
-    return (list(chain.from_iterable(x)))
 
     
 
@@ -238,14 +242,42 @@ class NGramLM(object):
 
 
     def sample(self, M):
-        result = ['\x02']  # Start of sentence token
+        result = ['\x02']
         tokens_generated = 0
 
+        def next_token_func(context, lm=self):
+            context = tuple(context)
+            possible_ngrams = lm.mdl[lm.mdl['n1gram'] == context]
+            if possible_ngrams.empty:
+                return '\x03'
+            return np.random.choice(possible_ngrams['ngram'].values, p=possible_ngrams['prob'].values)[-1]
+        
+        def before_n(n, context, lm):
+            if n == 2:
+                return next_token_func(context, lm)
+            else:
+                next_token = before_n(n-1, context, lm.prev_mdl)
+                context.append(next_token)
+                return next_token_func(context, lm)
+            
+        if self.N == 2:
+            result.append(before_n(self.N, result, self))
+        else:
+            result.append(before_n(self.N, result, self))
+        tokens_generated = self.N - 1
+        while tokens_generated < M - 1:
+            result.append(next_token_func(tuple(result[-(self.N-1):])))
+            tokens_generated += 1
+        result.append('\x03')
+
+        return ' '.join(result)
+
+        """
         while tokens_generated < M:
             found = False
             n = self.N
             context = tuple(result[-(n - 1):]) if n > 1 else None
-            model = self 
+            model = self
 
             while n > 1:
                 df = model.mdl
@@ -257,7 +289,12 @@ class NGramLM(object):
                         p=options['prob'] / options['prob'].sum()
                     )
                     result.append(next_token)
-                    tokens_generated += 1
+
+                    if next_token != '\x02' and next_token != '\x03':
+                        tokens_generated += 1
+
+                    if next_token == '\x03' and tokens_generated < M:
+                        result.append('\x02')  # Start a new paragraph
                     found = True
                     break
                 else:
@@ -266,22 +303,24 @@ class NGramLM(object):
                     context = tuple(result[-(n - 1):]) if n > 1 else None
 
             if not found:
-                # unigram model as last resort
+                # Backoff to unigram
                 if isinstance(model, UnigramLM) or isinstance(model, UniformLM):
                     next_token = np.random.choice(
                         model.mdl.index,
                         p=model.mdl.values
                     )
                     result.append(next_token)
-                    tokens_generated += 1
-                else:
-                    # nothing found even in unigram, then STOP token
-                    result.append('\x03')
-                    tokens_generated += 1
 
-            if result[-1] == '\x03':
-                break
+                    if next_token != '\x02' and next_token != '\x03':
+                        tokens_generated += 1
+
+                    if next_token == '\x03' and tokens_generated < M:
+                        result.append('\x02')  # Start a new paragraph
+                else:
+                    # Default: just stop
+                    result.append('\x03')
+                    if tokens_generated < M:
+                        result.append('\x02')
 
         return ' '.join(result)
-
-# my code ends at the first \x03, it should continue, like add next \x02
+        """
